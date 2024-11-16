@@ -1,36 +1,33 @@
-async function updateText() {
-    try {
-        const response = await fetch('/get_texts');
-        const data = await response.json();
+    async function fetchData() {
+        try {
+            const response = await fetch('/get_texts');
+            const data = await response.json();
 
-        const germanContainer = document.getElementById('german');
-        const russianContainer = document.getElementById('russian');
+            // Update German texts (only last 5 items, in large font)
+            const germanTexts = document.getElementById('german-texts');
+            germanTexts.innerHTML = '';  // Clear existing text
+            data.german.forEach(text => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerText = text;
+                germanTexts.appendChild(item);
+            });
 
-        // Очистка контейнеров
-        germanContainer.innerHTML = '';
-        russianContainer.innerHTML = '';
+            // Update partial text
+            document.getElementById('german-partial').innerText = data.partial || '';
 
-        // Добавляем новые предложения
-        data.german.forEach(sentence => {
-            const p = document.createElement('p');
-            p.textContent = sentence;
-            germanContainer.appendChild(p);
-        });
-
-        data.russian.forEach(sentence => {
-            const p = document.createElement('p');
-            p.textContent = sentence;
-            russianContainer.appendChild(p);
-        });
-
-        // Прокрутка к последней фразе
-        germanContainer.scrollTop = germanContainer.scrollHeight;
-        russianContainer.scrollTop = russianContainer.scrollHeight;
-
-    } catch (error) {
-        console.error('Ошибка обновления текста:', error);
+            // Update Russian texts (only last 5 items, in large font)
+            const russianTexts = document.getElementById('russian-texts');
+            russianTexts.innerHTML = '';  // Clear existing text
+            data.russian.forEach(text => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerText = text;
+                russianTexts.appendChild(item);
+            });
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        }
     }
-}
 
-// Обновление текста каждые 2 секунды
-setInterval(updateText, 2000);
+    setInterval(fetchData, 1000); // Fetch data every second

@@ -7,24 +7,24 @@ from flask import Flask, render_template, jsonify
 import json
 import os
 
-MAX_TRANSLATION_ROWS = 10
+# Line-In Device ID (replace with your actual line-in device ID - see device_enumerator.py output)
+LINE_IN_DEVICE_ID = 2
+MAX_TRANSLATION_ROWS = 5
 SAMPLE_RATE = 16000
 
 app = Flask(__name__)
 
 # Storage for text
-german_texts = []
-russian_texts = []
-german_partial = ""  # Global variable for partial transcription
+german_texts = ["Nimm deine Palmblättermatte und geh!"]
+russian_texts = ["Возьми свой коврик и иди!"]
+german_partial = "Nimm deine Palmblättermatte"
 
 # Gladia.io parameters
 API_KEY_FILE = 'gladia_api_key.txt'
-LIVE_TRANSCRIPTION_URL = 'https://api.gladia.io/v2/live'  # Gladia live transcription URL
+SESSION_FILE = 'gladia_session.txt'
+LIVE_TRANSCRIPTION_URL = 'https://api.gladia.io/v2/live'
 TRANSLATION_URL = 'https://api.gladia.io/v2/text/text-translation'
-SESSION_FILE = 'gladia_session.txt'  # File to store session information
 
-# Line-In Device ID (replace with your actual line-in device ID)
-LINE_IN_DEVICE_ID = 2
 
 # Function to load the API key from file
 def load_api_key():
@@ -125,10 +125,12 @@ async def stream_audio(websocket_url):
 
                                 if len(german_texts) > MAX_TRANSLATION_ROWS:
                                     german_texts.pop(0)
+
                                 # Translate German text to Russian
                                 translation_payload = {'text': german_text, 'source_lang': 'de', 'target_lang': 'ru'}
                                 translation_response = requests.post(TRANSLATION_URL, headers={'X-Gladia-Key': API_KEY},
                                                                      json=translation_payload)
+                                print(f"ru response: {translation_response}")
                                 if translation_response.ok:
                                     russian_text = translation_response.json().get('translation', '')
                                     if russian_text:
@@ -161,21 +163,14 @@ async def stream_audio(websocket_url):
                 print("Failed to obtain new WebSocket URL. Retrying in 5 seconds...")
                 await asyncio.sleep(5)  # Wait before retrying to avoid rapid requests
 
-
-#        finally:
-#            stream.stop_stream()
-#            stream.close()
-#            audio.terminate()
 # Flask routes
 @app.route('/')
 def index():
     return render_template('index.html')
 
-
 @app.route('/get_texts')
 def get_texts():
     return jsonify({'german': german_texts, 'russian': russian_texts, 'partial': german_partial})
-
 
 # Start WebSocket streaming in a background thread
 def start_streaming():
@@ -186,7 +181,6 @@ def start_streaming():
         asyncio.run(stream_audio(websocket_url))
     else:
         print("Failed to start live transcription session.")
-
 
 if __name__ == '__main__':
     # Start audio streaming in a background thread
