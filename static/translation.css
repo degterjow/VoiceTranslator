@@ -21,7 +21,7 @@ body {
     flex-direction: column;
     justify-content: flex-start; /* Align content to the top of the section */
     padding: 20px;
-    background-color: #e0f7fa; /* Light blue for differentiation */
+    background-color: #b2ebf2; /* (pale blue) */
     overflow: hidden; /* Hide overflow (no scrollbars) */
 }
 
@@ -32,7 +32,7 @@ body {
     flex-direction: column;
     justify-content: flex-start; /* Align content to the top of the section */
     padding: 20px;
-    background-color: #ffeb3b; /* Yellow for differentiation */
+    background-color: #b2dfdb; /* (light mint) */
     overflow: hidden; /* Hide overflow (no scrollbars) */
 }
 
