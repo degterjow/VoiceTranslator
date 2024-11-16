@@ -1,42 +1,71 @@
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            background-color: #f4f4f4;
-        }
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #f4f4f4;
+}
 
-        .container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
 
-        .section {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            overflow-y: auto;
-        }
+/* Section for German text */
+#german-section {
+    height: 50%; /* Fix the height to 50% of the screen */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* Align content to the top of the section */
+    padding: 20px;
+    background-color: #e0f7fa; /* Light blue for differentiation */
+    overflow-y: auto;
+}
 
-        .text {
-            font-size: 3em;
-            line-height: 1.2;
-            text-align: center;
-            width: 100%;
-            max-height: 100%;
-            overflow-y: scroll;
-        }
+/* Section for Russian text */
+#russian-section {
+    height: 50%; /* Fix the height to 50% of the screen */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* Align content to the top of the section */
+    padding: 20px;
+    background-color: #ffeb3b; /* Yellow for differentiation */
+    overflow-y: auto;
+}
 
-        .partial {
-            font-size: 3em;
-            font-weight: bold;
-            color: #333;
-            text-align: center;
-            margin-top: 20px;
-        }
+.text {
+    font-size: 3em;
+    line-height: 1.2;
+    text-align: center;
+    width: 100%;
+    max-height: 100%;
+    overflow-y: scroll;
+}
+
+.partial {
+    font-size: 2.5em; /* Slightly smaller font for partial text */
+    font-weight: bold;
+    color: #333;
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 10px; /* Extra padding to make it look more distinct */
+}
+
+/* Ensure the last 5 items for each section are displayed, and manage overflow */
+# german-texts, # russian-texts {
+    max-height: 80%; /* Limit text height to avoid stretching */
+    overflow-y: auto; /* Allow scroll if there's more text */
+}
+
+/* Style the partial text to be distinct from the main sections */
+# german-partial {
+    font-size: 2.5em;
+    font-weight: bold;
+    color: #333;
+    margin-top: 20px;
+    padding-top: 10px;
+    text-align: center;
+}

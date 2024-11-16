@@ -178,7 +178,8 @@ def start_streaming():
     websocket_url = load_websocket_url_from_file() or get_websocket_url()
     if websocket_url:
         # Run WebSocket audio streaming in a new asyncio event loop
-        asyncio.run(stream_audio(websocket_url))
+        #asyncio.run(stream_audio(websocket_url))
+        print("Debugging UI.")
     else:
         print("Failed to start live transcription session.")
 
