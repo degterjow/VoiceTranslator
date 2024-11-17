@@ -9,7 +9,7 @@ import os
 
 # Line-In Device ID (replace with your actual line-in device ID - see device_enumerator.py output)
 LINE_IN_DEVICE_ID = 2
-MAX_TRANSLATION_ROWS = 5
+MAX_TRANSLATION_ROWS = 4
 SAMPLE_RATE = 16000
 
 app = Flask(__name__)
@@ -86,7 +86,7 @@ async def stream_audio(websocket_url):
     global german_partial  # Declare the global variable
 
     if not websocket_url:
-        print("Нет WebSocket URL. Завершаем поток.")
+        print("No WebSocket URL. closing...")
         return
 
     audio_format = pyaudio.paInt16
@@ -104,7 +104,7 @@ async def stream_audio(websocket_url):
                 while True:
                     # Read audio data and send it over WebSocket
                     audio_data = stream.read(chunk)
-                    bytes_read = len(audio_data)
+                    # bytes_read = len(audio_data)
                     # print(f"Bytes read from audio stream: {bytes_read}")
                     await websocket.send(audio_data)
 
@@ -178,8 +178,8 @@ def start_streaming():
     websocket_url = load_websocket_url_from_file() or get_websocket_url()
     if websocket_url:
         # Run WebSocket audio streaming in a new asyncio event loop
-        #asyncio.run(stream_audio(websocket_url))
-        print("Debugging UI.")
+        asyncio.run(stream_audio(websocket_url))
+        #print("Debugging UI.")
     else:
         print("Failed to start live transcription session.")
 
