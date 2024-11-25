@@ -46,6 +46,7 @@ body {
     overflow: hidden; /* Hide overflow (no scrollbars) */
 }
 
+/* Partial translation styling */
 .partial {
     font-size: 2.5em; /* Slightly smaller font for partial text */
     color: #0d47a1; /* Dark blue text */
@@ -53,20 +54,41 @@ body {
     margin-top: 20px;
     padding-top: 10px; /* Extra padding to make it look more distinct */
     font-style: italic; /* Make the partial text italic */
+    opacity: 1;
+    transition: opacity 0.5s ease, transform 0.5s ease; /* Smooth fade and move */
+}
+
+/* Animation for partial translation update */
+.partial.fade-in {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.partial:not(.fade-in) {
+    opacity: 0.5;
+    transform: translateY(-10px);
 }
 
 /* Ensure the last 5 items for each section are displayed, and manage overflow */
-# german-texts, # russian-texts {
+#german-texts, #russian-texts {
     max-height: 80%; /* Limit text height to avoid stretching */
     overflow: hidden; /* Hide overflow (no scrollbars) */
 }
 
-/* Style the partial text to be distinct from the main sections */
-# german-partial {
-    font-size: 2.5em;
-    font-weight: bold;
-    color: #333;
-    margin-top: 20px;
-    padding-top: 10px;
-    text-align: center;
+/* Animation for new lines */
+.line {
+    transform: translateY(100%);
+    opacity: 0;
+    animation: slideIn 0.5s ease forwards;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }

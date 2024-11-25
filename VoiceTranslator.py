@@ -1,9 +1,11 @@
+import time
+
 import pyaudio
 import requests
 import threading
 import websockets
 import asyncio
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, Response
 import json
 import os
 import deepl
@@ -16,9 +18,11 @@ SAMPLE_RATE = 16000
 app = Flask(__name__)
 
 # Storage for text
-german_texts = ["Nimm deine Palmblättermatte und geh!"]
-russian_texts = ["Возьми свой коврик и иди!"]
-german_partial = "Nimm deine Palmblättermatte"
+german_texts = ["Erste Zeile", "Zweite Zeile", "Dritte Zeile"]
+russian_texts = ["Первая строка", "Вторая строка", "Третья строка"]
+german_partial = "Aktuelle Übersetzung in Progress..."
+new_german = ""
+new_russian = ""
 
 # Gladia.io parameters
 GLADIA_API_KEY_FILE = 'gladia_api_key.txt'
@@ -90,7 +94,9 @@ def load_websocket_url_from_file():
 
 # Function to stream audio over WebSocket
 async def stream_audio(websocket_url):
-    global german_partial  # Declare the global variable
+    global german_partial
+    global new_german
+    global new_russian
 
     if not websocket_url:
         print("No WebSocket URL. closing...")
@@ -140,6 +146,8 @@ async def stream_audio(websocket_url):
                                 if russian_text_result:
                                     print(f"russian: {russian_text_result.text}")
                                     russian_texts.append(russian_text_result.text)
+                                    new_german = german_text
+                                    new_russian = russian_text_result.text
                                     if len(russian_texts) > MAX_TRANSLATION_ROWS:
                                         russian_texts.pop(0)
                             else:
@@ -173,11 +181,36 @@ async def stream_audio(websocket_url):
 def index():
     return render_template('index.html')
 
+@app.route('/get_initial_texts', methods=['GET'])
+def get_initial_texts():
+    return jsonify({
+        "german": german_texts,
+        "russian": russian_texts
+    })
 
-@app.route('/get_texts')
-def get_texts():
-    return jsonify({'german': german_texts, 'russian': russian_texts, 'partial': german_partial})
+# SSE Route
+@app.route('/stream')
+def stream():
+    def event_stream():
+        previous_german = ""
+        previous_partial = ""
 
+        while True:
+
+            if german_partial != previous_partial:
+                yield f"event: partial\ndata: {json.dumps({'german_partial': german_partial})}\n\n"
+
+            if new_german != previous_german:
+                yield f"event: update\ndata: {json.dumps({'new_german': new_german, 'new_russian': new_russian})}\n\n"
+
+            # Update the previous state
+            previous_german = new_german
+            previous_partial = german_partial
+
+            # Control the update frequency
+            time.sleep(0.1)
+
+    return Response(event_stream(), content_type='text/event-stream')
 
 # Start WebSocket streaming in a background thread
 def start_streaming():
