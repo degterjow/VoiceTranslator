@@ -6,10 +6,11 @@ import asyncio
 from flask import Flask, render_template, jsonify
 import json
 import os
+import deepl
 
 # Line-In Device ID (replace with your actual line-in device ID - see device_enumerator.py output)
 LINE_IN_DEVICE_ID = 2
-MAX_TRANSLATION_ROWS = 4
+MAX_TRANSLATION_ROWS = 3
 SAMPLE_RATE = 16000
 
 app = Flask(__name__)
@@ -20,34 +21,40 @@ russian_texts = ["Возьми свой коврик и иди!"]
 german_partial = "Nimm deine Palmblättermatte"
 
 # Gladia.io parameters
-API_KEY_FILE = 'gladia_api_key.txt'
-SESSION_FILE = 'gladia_session.txt'
+GLADIA_API_KEY_FILE = 'gladia_api_key.txt'
+GLADIA_SESSION_FILE = 'gladia_session.txt'
 LIVE_TRANSCRIPTION_URL = 'https://api.gladia.io/v2/live'
-TRANSLATION_URL = 'https://api.gladia.io/v2/text/text-translation'
 
+# Deepl parameters
+DEEPL_API_KEY_FILE = 'deepl_api_key.txt'
 
 # Function to load the API key from file
-def load_api_key():
-    if not os.path.exists(API_KEY_FILE):
-        raise FileNotFoundError(f"API key file '{API_KEY_FILE}' not found. Please create it and add your Gladia API key.")
+def load_api_key(api_file_name):
+    if not os.path.exists(api_file_name):
+        raise FileNotFoundError(
+            f"API key file '{api_file_name}' not found. Please create it and add your API key.")
 
-    with open(API_KEY_FILE, 'r') as f:
+    with open(api_file_name, 'r') as f:
         api_key = f.read().strip()  # Read and strip whitespace/newlines
         if not api_key:
-            raise ValueError(f"API key file '{API_KEY_FILE}' is empty. Please add your Gladia API key.")
+            raise ValueError(f"API key file '{api_file_name}' is empty. Please add your API key.")
         return api_key
+
 # Load the API key
 try:
-    API_KEY = load_api_key()
+    GLADIA_API_KEY = load_api_key(GLADIA_API_KEY_FILE)
+    DEEPL_API_KEY = load_api_key(DEEPL_API_KEY_FILE)
+    translator = deepl.Translator(DEEPL_API_KEY)
 except (FileNotFoundError, ValueError) as e:
     print(e)
     exit(1)
+
 
 # Function to request a new WebSocket URL for live transcription
 def get_websocket_url():
     headers = {
         'Content-Type': 'application/json',
-        'X-Gladia-Key': API_KEY
+        'X-Gladia-Key': GLADIA_API_KEY
     }
     payload = {
         "encoding": "wav/pcm",
@@ -63,7 +70,7 @@ def get_websocket_url():
         print(f"URL: {websocket_url}")
 
         # Save session data to file
-        with open(SESSION_FILE, 'w') as f:
+        with open(GLADIA_SESSION_FILE, 'w') as f:
             f.write(websocket_url)
 
         return websocket_url
@@ -74,8 +81,8 @@ def get_websocket_url():
 
 # Function to load WebSocket URL from file if it exists
 def load_websocket_url_from_file():
-    if os.path.exists(SESSION_FILE):
-        with open(SESSION_FILE, 'r') as f:
+    if os.path.exists(GLADIA_SESSION_FILE):
+        with open(GLADIA_SESSION_FILE, 'r') as f:
             websocket_url = f.read().strip()
             return websocket_url
     return None
@@ -127,17 +134,14 @@ async def stream_audio(websocket_url):
                                     german_texts.pop(0)
 
                                 # Translate German text to Russian
-                                translation_payload = {'text': german_text, 'source_lang': 'de', 'target_lang': 'ru'}
-                                translation_response = requests.post(TRANSLATION_URL, headers={'X-Gladia-Key': API_KEY},
-                                                                     json=translation_payload)
-                                print(f"ru response: {translation_response}")
-                                if translation_response.ok:
-                                    russian_text = translation_response.json().get('translation', '')
-                                    if russian_text:
-                                        print(f"russian: {russian_text}")
-                                        russian_texts.append(russian_text)
-                                        if len(russian_text) > MAX_TRANSLATION_ROWS:
-                                            russian_text.pop(0)
+                                russian_text_result = translator.translate_text(german_text,
+                                                                         source_lang="DE",
+                                                                         target_lang="RU")
+                                if russian_text_result:
+                                    print(f"russian: {russian_text_result.text}")
+                                    russian_texts.append(russian_text_result.text)
+                                    if len(russian_texts) > MAX_TRANSLATION_ROWS:
+                                        russian_texts.pop(0)
                             else:
                                 german_partial = german_text
 
@@ -163,14 +167,17 @@ async def stream_audio(websocket_url):
                 print("Failed to obtain new WebSocket URL. Retrying in 5 seconds...")
                 await asyncio.sleep(5)  # Wait before retrying to avoid rapid requests
 
+
 # Flask routes
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 @app.route('/get_texts')
 def get_texts():
     return jsonify({'german': german_texts, 'russian': russian_texts, 'partial': german_partial})
+
 
 # Start WebSocket streaming in a background thread
 def start_streaming():
@@ -179,9 +186,10 @@ def start_streaming():
     if websocket_url:
         # Run WebSocket audio streaming in a new asyncio event loop
         asyncio.run(stream_audio(websocket_url))
-        #print("Debugging UI.")
+        # print("Debugging UI.")
     else:
         print("Failed to start live transcription session.")
+
 
 if __name__ == '__main__':
     # Start audio streaming in a background thread
