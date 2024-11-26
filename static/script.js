@@ -1,4 +1,4 @@
-const MAX_TRANSLATION_ROWS = 3; // Maximum number of rows to display in each section
+const MAX_TRANSLATION_ROWS = 2; // Maximum number of rows to display in each section
 
 document.addEventListener('DOMContentLoaded', function() {
     // Your existing JavaScript code
@@ -91,4 +91,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    document.getElementById('endpointing-slider').addEventListener('input', (event) => {
+        const endpointingValue = event.target.value;
+        document.getElementById('endpointing-value').textContent = endpointingValue;
+
+        // Send updated value to server or adjust WebSocket connection
+        updateEndpointing(endpointingValue);
+    });
 });
+
+function updateEndpointing(newEndpointing) {
+    // Notify the server of the new endpointing value
+    fetch('/update_endpointing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpointing: parseFloat(newEndpointing) })
+    })
+    .then(response => {
+        if (response.ok) {
+            console.log("Endpointing updated.");
+        } else {
+            console.error("Failed to update endpointing on the server.");
+        }
+    })
+    .catch(error => console.error("Error updating endpointing:", error));
+}

@@ -5,7 +5,7 @@ import requests
 import threading
 import websockets
 import asyncio
-from flask import Flask, render_template, jsonify, Response
+from flask import Flask, render_template, jsonify, Response, request
 import json
 import os
 import deepl
@@ -14,6 +14,7 @@ import deepl
 LINE_IN_DEVICE_ID = 2
 MAX_TRANSLATION_ROWS = 3
 SAMPLE_RATE = 16000
+endpointing_duration=0.5
 
 app = Flask(__name__)
 
@@ -55,7 +56,7 @@ except (FileNotFoundError, ValueError) as e:
 
 
 # Function to request a new WebSocket URL for live transcription
-def get_websocket_url():
+def get_websocket_url(duration):
     headers = {
         'Content-Type': 'application/json',
         'X-Gladia-Key': GLADIA_API_KEY
@@ -64,7 +65,8 @@ def get_websocket_url():
         "encoding": "wav/pcm",
         "sample_rate": SAMPLE_RATE,
         "bit_depth": 16,
-        "channels": 1
+        "channels": 1,
+        "endpointing": duration
     }
     response = requests.post(LIVE_TRANSCRIPTION_URL, headers=headers, json=payload)
 
@@ -159,7 +161,7 @@ async def stream_audio(websocket_url):
         except websockets.exceptions.InvalidStatus as e:
             if e.response.status_code == 403:
                 print(f"Запрашиваем новый URL: {e.response.body}")
-                websocket_url = get_websocket_url()  # Запрашиваем новый WebSocket URL
+                websocket_url = get_websocket_url(endpointing_duration)  # Запрашиваем новый WebSocket URL
                 if not websocket_url:
                     print("Не удалось получить новый WebSocket URL. Повтор через 5 секунд...")
                     await asyncio.sleep(5)
@@ -170,7 +172,7 @@ async def stream_audio(websocket_url):
         except (websockets.ConnectionClosed, ConnectionError) as e:
             print(f"WebSocket connection failed: {e}. Requesting new WebSocket URL...")
             # Request a new WebSocket URL and update `websocket_url`
-            websocket_url = get_websocket_url()
+            websocket_url = get_websocket_url(endpointing_duration)
             if not websocket_url:
                 print("Failed to obtain new WebSocket URL. Retrying in 5 seconds...")
                 await asyncio.sleep(5)  # Wait before retrying to avoid rapid requests
@@ -187,6 +189,20 @@ def get_initial_texts():
         "german": german_texts,
         "russian": russian_texts
     })
+
+@app.route('/update_endpointing', methods=['POST'])
+def update_endpointing():
+    global websocket_url, endpointing_duration
+
+    # Parse the new endpointing duration
+    data = request.json
+    endpointing_duration = data.get('endpointing', 0.5)  # Default to 0.5 if not provided
+
+    # Reinitialize WebSocket connection with new parameters
+    websocket_url = get_websocket_url(endpointing_duration)  # Optionally request a new WebSocket URL
+    print(f"Updated endpointing duration to {endpointing_duration}. WebSocket URL refreshed.")
+
+    return jsonify({"status": "success", "endpointing": endpointing_duration})
 
 # SSE Route
 @app.route('/stream')
@@ -215,7 +231,7 @@ def stream():
 # Start WebSocket streaming in a background thread
 def start_streaming():
     # Load WebSocket URL from file or request a new one
-    websocket_url = load_websocket_url_from_file() or get_websocket_url()
+    websocket_url = load_websocket_url_from_file() or get_websocket_url(endpointing_duration)
     if websocket_url:
         # Run WebSocket audio streaming in a new asyncio event loop
         asyncio.run(stream_audio(websocket_url))
