@@ -9,12 +9,13 @@ from flask import Flask, render_template, jsonify, Response, request
 import json
 import os
 import deepl
+import queue
 
 # Line-In Device ID (replace with your actual line-in device ID - see device_enumerator.py output)
 LINE_IN_DEVICE_ID = 2
 MAX_TRANSLATION_ROWS = 3
 SAMPLE_RATE = 16000
-endpointing_duration=0.5
+endpointing_duration=0.3
 
 app = Flask(__name__)
 
@@ -25,6 +26,9 @@ german_partial = "Aktuelle Übersetzung in Progress..."
 new_german = ""
 new_russian = ""
 
+# Queue for TTS
+tts_queue = queue.Queue()
+
 # Gladia.io parameters
 GLADIA_API_KEY_FILE = 'gladia_api_key.txt'
 GLADIA_SESSION_FILE = 'gladia_session.txt'
@@ -32,6 +36,17 @@ LIVE_TRANSCRIPTION_URL = 'https://api.gladia.io/v2/live'
 
 # Deepl parameters
 DEEPL_API_KEY_FILE = 'deepl_api_key.txt'
+
+# Параметры Mumble
+MUMBLE_HOST = "192.168.2.1"
+MUMBLE_PORT = 64738
+MUMBLE_USERNAME = "TTS_Bot"
+MUMBLE_PASSWORD = "your_mumble_password"
+MUMBLE_CHANNEL = "TTS"
+
+# Инициализация Coqui TTS
+TTS_MODEL = "tts_models/ru/v3_1"  # Замените модель на нужную
+tts = TTS(TTS_MODEL)
 
 # Function to load the API key from file
 def load_api_key(api_file_name):
@@ -228,6 +243,27 @@ def stream():
 
     return Response(event_stream(), content_type='text/event-stream')
 
+def tts_worker(mumble_client):
+    """
+    Background worker for processing TTS queue and sending audio to Mumble server.
+    """
+    while True:
+        try:
+            # Get text from the queue (blocking until an item is available)
+            text = tts_queue.get()
+            if text is None:
+                # Stop processing if a None signal is sent to the queue
+                break
+
+            print(f"Processing TTS for text: {text}")
+            generate_and_stream_tts(mumble_client, text)
+
+        except Exception as e:
+            print(f"Error in TTS worker: {e}")
+        finally:
+            # Mark task as done
+            tts_queue.task_done()
+
 # Start WebSocket streaming in a background thread
 def start_streaming():
     # Load WebSocket URL from file or request a new one
@@ -239,8 +275,23 @@ def start_streaming():
     else:
         print("Failed to start live transcription session.")
 
+# Cleanup on exit
+import atexit
+
+def cleanup():
+    """
+    Ensure the TTS worker thread stops on application exit.
+    """
+    tts_queue.put(None)  # Signal the worker thread to exit
+    tts_thread.join()    # Wait for the thread to finish
+
+atexit.register(cleanup)
 
 if __name__ == '__main__':
     # Start audio streaming in a background thread
     threading.Thread(target=start_streaming, daemon=True).start()
+    # Initialize and start the TTS worker thread
+    mumble_client = mumble_connect()  # Ensure Mumble client is initialized
+    tts_thread = threading.Thread(target=tts_worker, args=(mumble_client,), daemon=True)
+    tts_thread.start()
     app.run(debug=True)
