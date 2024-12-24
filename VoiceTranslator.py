@@ -13,7 +13,7 @@ import queue
 import io
 import time
 import atexit
-
+import logging
 
 # Line-In Device ID (replace with your actual line-in device ID - see device_enumerator.py output)
 LINE_IN_DEVICE_ID = 2
@@ -51,6 +51,18 @@ MUMBLE_USERNAME = "TTS_Bot"
 MUMBLE_PASSWORD = "your_mumble_password"
 MUMBLE_CHANNEL = "TTS"
 
+# Настройка логгера
+logging.basicConfig(
+    level=logging.INFO,  # Установите уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # Логи в консоль
+        logging.FileHandler("voice_translator.log")  # Логи в файл
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
 def mumble_connect():
     """
     Подключается к серверу Mumble и возвращает клиентский объект.
@@ -70,11 +82,11 @@ def mumble_connect():
         while not mumble_client.is_ready():
             time.sleep(0.1)
 
-        print("Mumble client connected successfully!")
+        logger.info("Mumble client connected successfully!")
         return mumble_client
 
     except Exception as e:
-        print(f"Error connecting to Mumble server: {e}")
+        logger.error(f"Error connecting to Mumble server: {e}")
         return None
 
 # Function to load the API key from file
@@ -97,7 +109,7 @@ try:
     translator = deepl.Translator(DEEPL_API_KEY)
     elevenLabsClient = ElevenLabs( api_key=ELEVEN_LABS_API_KEY,)
 except (FileNotFoundError, ValueError) as e:
-    print(e)
+    logger.error(e)
     exit(1)
 
 
@@ -119,7 +131,7 @@ def get_websocket_url(duration):
     if response.ok:
         stream_data = response.json()
         websocket_url = stream_data.get("url")
-        print(f"URL: {websocket_url}")
+        logger.info(f"URL: {websocket_url}")
 
         # Save session data to file
         with open(GLADIA_SESSION_FILE, 'w') as f:
@@ -127,7 +139,7 @@ def get_websocket_url(duration):
 
         return websocket_url
     else:
-        print(f"Error initializing live transcription: {response.status_code} {response.text}")
+        logger.error(f"Error initializing live transcription: {response.status_code} {response.text}")
         return None
 
 
@@ -135,19 +147,19 @@ def get_websocket_url(duration):
 def load_websocket_url_from_file():
     if os.path.exists(GLADIA_SESSION_FILE):
         with open(GLADIA_SESSION_FILE, 'r') as f:
-            websocket_url = f.read().strip()
-            return websocket_url
+            gladia_websocket_url = f.read().strip()
+            return gladia_websocket_url
     return None
 
 
 # Function to stream audio over WebSocket
-async def stream_audio(websocket_url):
+async def stream_audio(gladia_websocket_url):
     global german_partial
     global new_german
     global new_russian
 
-    if not websocket_url:
-        print("No WebSocket URL. closing...")
+    if not gladia_websocket_url:
+        logger.error("No WebSocket URL. closing...")
         return
 
     audio_format = pyaudio.paInt16
@@ -161,12 +173,10 @@ async def stream_audio(websocket_url):
     while True:
         try:
             # Connect to WebSocket and start streaming audio
-            async with websockets.connect(websocket_url) as websocket:
+            async with websockets.connect(gladia_websocket_url) as websocket:
                 while True:
                     # Read audio data and send it over WebSocket
                     audio_data = stream.read(chunk)
-                    # bytes_read = len(audio_data)
-                    # print(f"Bytes read from audio stream: {bytes_read}")
                     await websocket.send(audio_data)
 
                     # Receive transcription data
@@ -180,7 +190,7 @@ async def stream_audio(websocket_url):
 
                         if german_text:
                             if is_final:
-                                print(f"german: {german_text}")
+                                logger.debug(f"german: {german_text}")
                                 german_texts.append(german_text)
                                 german_partial = ""
 
@@ -192,7 +202,7 @@ async def stream_audio(websocket_url):
                                                                          source_lang="DE",
                                                                          target_lang="RU")
                                 if russian_text_result:
-                                    print(f"russian: {russian_text_result.text}")
+                                    logger.debug(f"russian: {russian_text_result.text}")
                                     russian_texts.append(russian_text_result.text)
                                     new_german = german_text
                                     new_russian = russian_text_result.text
@@ -206,21 +216,21 @@ async def stream_audio(websocket_url):
 
         except websockets.exceptions.InvalidStatus as e:
             if e.response.status_code == 403:
-                print(f"Запрашиваем новый URL: {e.response.body}")
-                websocket_url = get_websocket_url(endpointing_duration)  # Запрашиваем новый WebSocket URL
-                if not websocket_url:
-                    print("Не удалось получить новый WebSocket URL. Повтор через 5 секунд...")
+                logger.info(f"Запрашиваем новый URL: {e.response.body}")
+                gladia_websocket_url = get_websocket_url(endpointing_duration)  # Запрашиваем новый WebSocket URL
+                if not gladia_websocket_url:
+                    logger.error("Не удалось получить новый WebSocket URL. Повтор через 5 секунд...")
                     await asyncio.sleep(5)
             else:
-                print(f"Ошибка подключения WebSocket: {e}")
+                logger.error(f"Ошибка подключения WebSocket: {e}")
                 await asyncio.sleep(5)
 
         except (websockets.ConnectionClosed, ConnectionError) as e:
-            print(f"WebSocket connection failed: {e}. Requesting new WebSocket URL...")
+            logger.error(f"WebSocket connection failed: {e}. Requesting new WebSocket URL...")
             # Request a new WebSocket URL and update `websocket_url`
-            websocket_url = get_websocket_url(endpointing_duration)
-            if not websocket_url:
-                print("Failed to obtain new WebSocket URL. Retrying in 5 seconds...")
+            gladia_websocket_url = get_websocket_url(endpointing_duration)
+            if not gladia_websocket_url:
+                logger.error("Failed to obtain new WebSocket URL. Retrying in 5 seconds...")
                 await asyncio.sleep(5)  # Wait before retrying to avoid rapid requests
 
 
@@ -246,7 +256,7 @@ def update_endpointing():
 
     # Reinitialize WebSocket connection with new parameters
     websocket_url = get_websocket_url(endpointing_duration)  # Optionally request a new WebSocket URL
-    print(f"Updated endpointing duration to {endpointing_duration}. WebSocket URL refreshed.")
+    logger.info(f"Updated endpointing duration to {endpointing_duration}. WebSocket URL refreshed.")
 
     return jsonify({"status": "success", "endpointing": endpointing_duration})
 
@@ -286,7 +296,7 @@ def eleven_labs_worker(mumble_client):
                 # Stop processing if a None signal is sent to the queue
                 break
 
-            print(f"Processing TTS for text: {tts_text}")
+            logger.debug(f"Processing TTS for text: {tts_text}")
             audio_stream = elevenLabsClient.text_to_speech.convert_as_stream(
                 text=tts_text,
                 voice_id="JBFqnCBsd6RMkjVDRZzb",
@@ -296,7 +306,7 @@ def eleven_labs_worker(mumble_client):
             send_stream_to_mumble(mumble_client, audio_stream)
 
         except Exception as e:
-            print(f"Error in TTS worker: {e}")
+            logger.error(f"Error in TTS worker: {e}")
         finally:
             # Mark task as done
             tts_queue.task_done()
@@ -310,11 +320,11 @@ def send_stream_to_mumble(mumble_client, audio_stream):
         audio_stream: Поток аудиоданных, возвращаемый Eleven Labs.
     """
     try:
-        print("Streaming audio to Mumble...")
+        logger.debug("Streaming audio to Mumble...")
 
         # Убедитесь, что Mumble клиент подключен
         if not mumble_client.is_connected():
-            print("Mumble client is not connected.")
+            logger.error("Mumble client is not connected.")
             return
 
         # Преобразуем поток в байтовый буфер
@@ -322,10 +332,10 @@ def send_stream_to_mumble(mumble_client, audio_stream):
 
         # Передаем аудио в Mumble
         mumble_client.stream_raw_audio(audio_buffer.getvalue())  # Пример функции для стрима
-        print("Audio streamed successfully.")
+        logger.debug("Audio streamed successfully.")
 
     except Exception as e:
-        print(f"Error while streaming audio to Mumble: {e}")
+        logger.error(f"Error while streaming audio to Mumble: {e}")
 
 # Start WebSocket streaming in a background thread
 def start_streaming():
@@ -335,7 +345,7 @@ def start_streaming():
         # Run WebSocket audio streaming in a new asyncio event loop
         asyncio.run(stream_audio(gladia_websocket_url))
     else:
-        print("Failed to start live transcription session.")
+        logger.error("Failed to start live transcription session.")
 
 def cleanup_on_exit():
     """
