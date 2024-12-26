@@ -5,7 +5,6 @@ import websockets
 import asyncio
 from flask import Flask, render_template, jsonify, Response, request
 from elevenlabs.client import ElevenLabs
-from pymumble_py3 import Mumble
 import json
 import os
 import deepl
@@ -44,16 +43,9 @@ DEEPL_API_KEY_FILE = 'deepl_api_key.txt'
 # Eleven labs parameters
 ELEVEN_LABS_API_KEY_FILE = 'eleven_labs_api_key.txt'
 
-# Mumble parameters
-MUMBLE_HOST = "192.168.2.1"
-MUMBLE_PORT = 64738
-MUMBLE_USERNAME = "TTS_Bot"
-MUMBLE_PASSWORD = "your_mumble_password"
-MUMBLE_CHANNEL = "TTS"
-
 # Настройка логгера
 logging.basicConfig(
-    level=logging.INFO,  # Установите уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    level=logging.DEBUG,  # Установите уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),  # Логи в консоль
@@ -62,32 +54,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-def mumble_connect():
-    """
-    Подключается к серверу Mumble и возвращает клиентский объект.
-    """
-    try:
-        mumble_client = Mumble(
-            server=MUMBLE_HOST,
-            port=MUMBLE_PORT,
-            user=MUMBLE_USERNAME,
-            password=MUMBLE_PASSWORD
-        )
-
-        # Установите соединение
-        mumble_client.connect()
-
-        # Подождите, пока подключение не установится
-        while not mumble_client.is_ready():
-            time.sleep(0.1)
-
-        logger.info("Mumble client connected successfully!")
-        return mumble_client
-
-    except Exception as e:
-        logger.error(f"Error connecting to Mumble server: {e}")
-        return None
 
 # Function to load the API key from file
 def load_api_key(api_file_name):
@@ -206,6 +172,7 @@ async def stream_audio(gladia_websocket_url):
                                     russian_texts.append(russian_text_result.text)
                                     new_german = german_text
                                     new_russian = russian_text_result.text
+                                    tts_queue.put(new_russian)
                                     if len(russian_texts) > MAX_TRANSLATION_ROWS:
                                         russian_texts.pop(0)
                             else:
@@ -284,7 +251,7 @@ def stream():
 
     return Response(event_stream(), content_type='text/event-stream')
 
-def eleven_labs_worker(mumble_client):
+def eleven_labs_worker():
     """
     Background worker for processing TTS queue and sending audio to Mumble server.
     """
@@ -303,7 +270,7 @@ def eleven_labs_worker(mumble_client):
                 model_id="eleven_multilingual_v2"
             )
 
-            send_stream_to_mumble(mumble_client, audio_stream)
+            send_stream_flask(audio_stream)
 
         except Exception as e:
             logger.error(f"Error in TTS worker: {e}")
@@ -311,28 +278,18 @@ def eleven_labs_worker(mumble_client):
             # Mark task as done
             tts_queue.task_done()
 
-def send_stream_to_mumble(mumble_client, audio_stream):
+def send_stream_flask(audio_stream):
     """
-    Отправляет аудиопоток в клиент Mumble.
+    Отправляет аудиопоток в Flask.
 
     Args:
-        mumble_client: Инициализированный клиент Mumble.
         audio_stream: Поток аудиоданных, возвращаемый Eleven Labs.
     """
     try:
-        logger.debug("Streaming audio to Mumble...")
-
-        # Убедитесь, что Mumble клиент подключен
-        if not mumble_client.is_connected():
-            logger.error("Mumble client is not connected.")
-            return
+        logger.debug("Streaming audio to Flask server...")
 
         # Преобразуем поток в байтовый буфер
         audio_buffer = io.BytesIO(audio_stream.read())
-
-        # Передаем аудио в Mumble
-        mumble_client.stream_raw_audio(audio_buffer.getvalue())  # Пример функции для стрима
-        logger.debug("Audio streamed successfully.")
 
     except Exception as e:
         logger.error(f"Error while streaming audio to Mumble: {e}")
@@ -360,10 +317,9 @@ if __name__ == '__main__':
     # Start audio streaming in a background thread
     threading.Thread(target=start_streaming, daemon=True).start()
     # Initialize and start the TTS worker thread
-    mumble_client = mumble_connect()  # Ensure Mumble client is initialized
     # Добавление текста в очередь
     tts_queue.put("Небольщой пример текста для проверки работы синтеза речи движка Eleven Labs.")
 
-    tts_thread = threading.Thread(target=eleven_labs_worker, args=(mumble_client,), daemon=True)
+    tts_thread = threading.Thread(target=eleven_labs_worker, daemon=True)
     tts_thread.start()
     app.run(debug=True)
