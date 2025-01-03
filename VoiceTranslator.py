@@ -31,6 +31,8 @@ new_russian = ""
 
 # Queue for TTS
 tts_queue = queue.Queue()
+audio_queue = queue.Queue(maxsize=10)  # Очередь для передачи аудиоданных клиентам
+
 
 # Gladia.io parameters
 GLADIA_API_KEY_FILE = 'gladia_api_key.txt'
@@ -251,17 +253,38 @@ def stream():
 
     return Response(event_stream(), content_type='text/event-stream')
 
+@app.route('/audio_stream')
+def audio_stream():
+    """
+    HTTP-эндпоинт для передачи аудиопотока клиентам.
+    """
+    def audio_generator():
+        try:
+            logger.debug("Starting audio stream to clients...")
+            while True:
+                # Получение аудиоданных из очереди
+                chunk = audio_queue.get()
+                if chunk is None:
+                    break  # Сигнал остановки
+                yield chunk
+        except GeneratorExit:
+            logger.debug("Client disconnected from audio stream.")
+        except Exception as e:
+            logger.error(f"Error in audio generator: {e}")
+
+    return Response(audio_generator(), content_type='audio/wav')
+
+
 def eleven_labs_worker():
     """
-    Background worker for processing TTS queue and sending audio to Mumble server.
+    Фоновый процесс для обработки очереди текста TTS и передачи аудиопотока в audio_queue.
     """
     while True:
         try:
-            # Get text from the queue (blocking until an item is available)
+            # Получение текста из очереди
             tts_text = tts_queue.get()
             if tts_text is None:
-                # Stop processing if a None signal is sent to the queue
-                break
+                break  # Сигнал остановки
 
             logger.debug(f"Processing TTS for text: {tts_text}")
             audio_stream = elevenLabsClient.text_to_speech.convert_as_stream(
@@ -270,12 +293,13 @@ def eleven_labs_worker():
                 model_id="eleven_multilingual_v2"
             )
 
-            send_stream_flask(audio_stream)
+            # Чтение аудиопотока по частям и добавление в очередь аудиоданных
+            for chunk in iter(lambda: audio_stream.read(1024), b''):
+                audio_queue.put(chunk)
 
         except Exception as e:
             logger.error(f"Error in TTS worker: {e}")
         finally:
-            # Mark task as done
             tts_queue.task_done()
 
 def send_stream_flask(audio_stream):
@@ -292,7 +316,7 @@ def send_stream_flask(audio_stream):
         audio_buffer = io.BytesIO(audio_stream.read())
 
     except Exception as e:
-        logger.error(f"Error while streaming audio to Mumble: {e}")
+        logger.error(f"Error while streaming audio to Flask: {e}")
 
 # Start WebSocket streaming in a background thread
 def start_streaming():
@@ -306,10 +330,13 @@ def start_streaming():
 
 def cleanup_on_exit():
     """
-    Ensure the TTS worker thread stops on application exit.
+    Обеспечивает корректное завершение фоновых потоков при завершении приложения.
     """
-    tts_queue.put(None)  # Signal the worker thread to exit
-    tts_thread.join()    # Wait for the thread to finish
+    tts_queue.put(None)  # Сигнал остановки для TTS-потока
+    tts_thread.join()    # Ожидание завершения потока
+
+    audio_queue.put(None)  # Сигнал остановки для аудиопотока
+    logger.info("Cleaned up resources on exit.")
 
 atexit.register(cleanup_on_exit)
 
