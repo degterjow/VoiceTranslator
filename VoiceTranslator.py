@@ -9,7 +9,6 @@ import json
 import os
 import deepl
 import queue
-import io
 import time
 import atexit
 import logging
@@ -30,6 +29,7 @@ new_german = ""
 new_russian = ""
 
 # Queue for TTS
+tts_thread = None  # Инициализация переменной для потока
 tts_queue = queue.Queue()
 audio_queue = queue.Queue(maxsize=10)  # Очередь для передачи аудиоданных клиентам
 
@@ -47,7 +47,7 @@ ELEVEN_LABS_API_KEY_FILE = 'eleven_labs_api_key.txt'
 
 # Настройка логгера
 logging.basicConfig(
-    level=logging.DEBUG,  # Установите уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    level=logging.INFO,  # Установите уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),  # Логи в консоль
@@ -301,22 +301,6 @@ def eleven_labs_worker():
             logger.error(f"Error in TTS worker: {e}")
         finally:
             tts_queue.task_done()
-
-def send_stream_flask(audio_stream):
-    """
-    Отправляет аудиопоток в Flask.
-
-    Args:
-        audio_stream: Поток аудиоданных, возвращаемый Eleven Labs.
-    """
-    try:
-        logger.debug("Streaming audio to Flask server...")
-
-        # Преобразуем поток в байтовый буфер
-        audio_buffer = io.BytesIO(audio_stream.read())
-
-    except Exception as e:
-        logger.error(f"Error while streaming audio to Flask: {e}")
 
 # Start WebSocket streaming in a background thread
 def start_streaming():
