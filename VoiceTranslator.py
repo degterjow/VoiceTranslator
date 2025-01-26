@@ -12,6 +12,7 @@ import queue
 import time
 import atexit
 import logging
+from waitress import serve  # Import Waitress
 
 # Line-In Device ID (replace with your actual line-in device ID - see device_enumerator.py output)
 LINE_IN_DEVICE_ID = 2
@@ -28,30 +29,31 @@ german_partial = "Aktuelle Übersetzung in Progress..."
 new_german = ""
 new_russian = ""
 
-# Queue for TTS
-tts_thread = None  # Инициализация переменной для потока
+# Queues for TTS and audio streaming
+tts_thread = None
 tts_queue = queue.Queue()
-audio_queue = queue.Queue(maxsize=10)  # Очередь для передачи аудиоданных клиентам
+audio_queue = queue.Queue(maxsize=10)
 
+# API key file locations
+GLADIA_API_KEY_FILE = 'gladia_api_key.txt'
+DEEPL_API_KEY_FILE = 'deepl_api_key.txt'
+ELEVEN_LABS_API_KEY_FILE = 'eleven_labs_api_key.txt'
 
 # Gladia.io parameters
-GLADIA_API_KEY_FILE = 'gladia_api_key.txt'
 GLADIA_SESSION_FILE = 'gladia_session.txt'
 LIVE_TRANSCRIPTION_URL = 'https://api.gladia.io/v2/live'
 
-# Deepl parameters
-DEEPL_API_KEY_FILE = 'deepl_api_key.txt'
-
 # Eleven labs parameters
-ELEVEN_LABS_API_KEY_FILE = 'eleven_labs_api_key.txt'
+ELEVEN_LABS_VOICE_ID="JBFqnCBsd6RMkjVDRZzb",
+ELEVEN_LABS_MODEL_ID="eleven_multilingual_v2"
 
-# Настройка логгера
+
 logging.basicConfig(
-    level=logging.INFO,  # Установите уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    level=logging.INFO,  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.StreamHandler(),  # Логи в консоль
-        logging.FileHandler("voice_translator.log")  # Логи в файл
+        logging.StreamHandler(),  # Logs to console
+        logging.FileHandler("voice_translator.log")  # Logs to file
     ]
 )
 
@@ -185,13 +187,13 @@ async def stream_audio(gladia_websocket_url):
 
         except websockets.exceptions.InvalidStatus as e:
             if e.response.status_code == 403:
-                logger.info(f"Запрашиваем новый URL: {e.response.body}")
+                logger.info(f"Request a new URL: {e.response.body}")
                 gladia_websocket_url = get_websocket_url(endpointing_duration)  # Запрашиваем новый WebSocket URL
                 if not gladia_websocket_url:
-                    logger.error("Не удалось получить новый WebSocket URL. Повтор через 5 секунд...")
+                    logger.error("Failed to get a new WebSocket URL. Repeat after 5 seconds...")
                     await asyncio.sleep(5)
             else:
-                logger.error(f"Ошибка подключения WebSocket: {e}")
+                logger.error(f"WebSocket connection error: {e}")
                 await asyncio.sleep(5)
 
         except (websockets.ConnectionClosed, ConnectionError) as e:
@@ -256,16 +258,16 @@ def stream():
 @app.route('/audio_stream')
 def audio_stream():
     """
-    HTTP-эндпоинт для передачи аудиопотока клиентам.
+    HTTP endpoint for audio streaming to clients.
     """
     def audio_generator():
         try:
-            logger.debug("Starting audio stream to clients...")
+            logger.info("Starting audio stream to clients...")
             while True:
-                # Получение аудиоданных из очереди
+                # Retrieving audio data from the queue
                 chunk = audio_queue.get()
                 if chunk is None:
-                    break  # Сигнал остановки
+                    break  # Stop signal
                 yield chunk
         except GeneratorExit:
             logger.debug("Client disconnected from audio stream.")
@@ -277,23 +279,23 @@ def audio_stream():
 
 def eleven_labs_worker():
     """
-    Фоновый процесс для обработки очереди текста TTS и передачи аудиопотока в audio_queue.
+    Background process to process the TTS text queue and pass the audio stream to audio_queue.
     """
     while True:
         try:
-            # Получение текста из очереди
+            # Retrieving text from a queue
             tts_text = tts_queue.get()
             if tts_text is None:
-                break  # Сигнал остановки
+                break  # Stop signal
 
-            logger.debug(f"Processing TTS for text: {tts_text}")
+            logger.info(f"Processing TTS for text: {tts_text}")
             audio_stream = elevenLabsClient.text_to_speech.convert_as_stream(
                 text=tts_text,
-                voice_id="JBFqnCBsd6RMkjVDRZzb",
-                model_id="eleven_multilingual_v2"
+                voice_id=ELEVEN_LABS_VOICE_ID,
+                model_id=ELEVEN_LABS_MODEL_ID
             )
 
-            # Чтение аудиопотока по частям и добавление в очередь аудиоданных
+            # Read audio stream in parts and add to the audio data queue
             for chunk in iter(lambda: audio_stream.read(1024), b''):
                 audio_queue.put(chunk)
 
@@ -314,12 +316,12 @@ def start_streaming():
 
 def cleanup_on_exit():
     """
-    Обеспечивает корректное завершение фоновых потоков при завершении приложения.
+    Ensures that background threads are terminated correctly when the application is terminated.
     """
-    tts_queue.put(None)  # Сигнал остановки для TTS-потока
-    tts_thread.join()    # Ожидание завершения потока
+    tts_queue.put(None)  # Stop signal for TTS flow
+    tts_thread.join()    # Waiting for the flow to complete
 
-    audio_queue.put(None)  # Сигнал остановки для аудиопотока
+    audio_queue.put(None)  # Stop signal for audio stream
     logger.info("Cleaned up resources on exit.")
 
 atexit.register(cleanup_on_exit)
@@ -328,9 +330,11 @@ if __name__ == '__main__':
     # Start audio streaming in a background thread
     threading.Thread(target=start_streaming, daemon=True).start()
     # Initialize and start the TTS worker thread
-    # Добавление текста в очередь
+    # Adding text to a queue
     tts_queue.put("Небольщой пример текста для проверки работы синтеза речи движка Eleven Labs.")
 
     tts_thread = threading.Thread(target=eleven_labs_worker, daemon=True)
     tts_thread.start()
-    app.run(debug=True)
+
+    # Run the app with Waitress
+    serve(app, host='0.0.0.0', port=80)
